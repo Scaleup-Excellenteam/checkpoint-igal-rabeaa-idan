@@ -1,7 +1,7 @@
 import asyncio
 import websockets
 
-SERVER_URL = "ws://localhost:8000/messanger"
+SERVER_URL = "ws://172.28.12.20:8000/messanger"
 
 async def receive_messages(ws):
     while True:

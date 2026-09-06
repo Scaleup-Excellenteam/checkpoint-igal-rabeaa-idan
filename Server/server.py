@@ -28,7 +28,7 @@ async def websocket_messanger(websocket: WebSocket):
         print(f"Client has disconnected. Total clients in the system: {len(connected_clients)}")
 
 def main():
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="172.28.12.20", port=PORT)
 
 if __name__ == "__main__":
     main()
