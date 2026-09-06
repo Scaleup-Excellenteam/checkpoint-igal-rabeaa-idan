@@ -1,47 +1,34 @@
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import uvicorn
 
 app = FastAPI()
+PORT = 8000
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+connected_clients = []
 
-FAKE_USERS_DB = {
-    "idan": "idan123",
-    "user": "user123",
-    "admin": "admin123"
-}
+@app.get("/health")
+async def health_check():
+    return {"Status": "Healthy"}
 
-class UserSignup(BaseModel):
-    username: str
-    password: str
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+@app.websocket("/messanger")
+async def websocket_messanger(websocket: WebSocket):
+    await websocket.accept()
+    connected_clients.append(websocket)
+    print(f"Client is now connected. Total clients in the system: {len(connected_clients)}")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            print(f"Data received from the client to all clients: {data}")
+            for client in connected_clients:
+                await client.send_text(data)
 
-@app.post("/login", status_code=status.HTTP_200_OK)
-async def login(credentials: LoginRequest):
-    stored_password = FAKE_USERS_DB.get(credentials.username)
-    if not stored_password or stored_password != credentials.password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
-        )
-    return {
-        "status": "success",
-        "message": f"Welcome back, {credentials.username}!"
-    }
+    except WebSocketDisconnect:
+        connected_clients.remove(websocket)
+        print(f"Client has disconnected. Total clients in the system: {len(connected_clients)}")
 
-@app.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(user: UserSignup):
-    if user.username in FAKE_USERS_DB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    FAKE_USERS_DB[user.username] = user.password
-    return {
-        "message": f"User '{user.username}' created successfully!"
-    }
+def main():
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
+
+if __name__ == "__main__":
+    main()
