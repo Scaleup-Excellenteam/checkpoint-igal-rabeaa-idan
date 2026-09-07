@@ -17,8 +17,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from urllib.parse import urlencode, urlparse, urlunparse
+
+if sys.platform == "win32":
+    os.system("")
+
 
 try:
     import httpx
@@ -222,7 +227,7 @@ def _render_incoming(payload: dict) -> None:
         code = payload.get("code")
         message = payload.get("message") or payload.get("error")
         if code == "ACCOUNT_BANNED":
-            print(f"\n===== BANNED: {message} =====")
+            print(f"\n\033[1;31m===== BANNED: {message} =====\033[0m")
         elif code == "DLP_VIOLATION":
             pass
         else:
