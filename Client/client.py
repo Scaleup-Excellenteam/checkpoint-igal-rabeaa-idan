@@ -113,8 +113,29 @@ def _retry(prompt: str) -> bool:
     return answer in ("y", "yes")
 
 
+def print_help_guide():
+    print("""
+============================================================
+              WELCOME TO TSPO CHAT MESSENGER
+============================================================
+Available Commands:
+  /join <room_id>  - Join or switch to a room (e.g., /join general)
+  /leave           - Leave the current room
+  /list            - View rooms you entered vs other active rooms
+  /users           - Show all users and their status (USER - STATUS)
+  /help            - Show this command list again
+  /exit            - Disconnect and exit the chat application
+============================================================
+Type /join <room_id> to enter a room and start chatting!
+""")
+
+
 def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
     """Translate raw CLI input into a structured protocol message."""
+    if text == "/help":
+        print_help_guide()
+        return None
+
     if text.startswith("/join "):
         room_id = text[len("/join "):].strip()
         if not room_id:
@@ -132,7 +153,7 @@ def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
         return {"action": "exit"}
 
     if not current_room:
-        print("You're not in a room yet. Use /join <room_id> first (e.g. /join general).")
+        print("You're not in a room yet. Use /join <room_id> first (e.g. /join general). Type /help for commands.")
         return None
 
     return {"action": "message", "room": current_room, "content": text, "payload": text}
@@ -199,7 +220,7 @@ async def run_chat(ws_url: str) -> None:
     state = {"disconnected": False}
     try:
         async with websockets.connect(ws_url) as ws:
-            print("----- Connected to server -----")
+            print_help_guide()
             await asyncio.gather(
                 receive_messages(ws, state),
                 send_messages(ws, state),
@@ -210,6 +231,7 @@ async def run_chat(ws_url: str) -> None:
 
     if state["disconnected"]:
         print("\n----- Disconnected from server -----")
+
 
 
 def main():
