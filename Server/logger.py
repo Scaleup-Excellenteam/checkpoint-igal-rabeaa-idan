@@ -6,6 +6,9 @@ import sys
 LOG_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE_PATH = os.path.join(LOG_DIR, "server.log")
 
+# Enable Virtual Terminal Processing on Windows console for ANSI color support
+if sys.platform == "win32":
+    os.system("")
 
 # Custom BLOCKED log level
 BLOCKED_LEVEL = 35
@@ -14,10 +17,33 @@ logging.addLevelName(BLOCKED_LEVEL, "BLOCKED")
 
 def _blocked(self, message, *args, **kws):
     if self.isEnabledFor(BLOCKED_LEVEL):
+        if sys.version_info >= (3, 8):
+            kws.setdefault("stacklevel", 2)
         self._log(BLOCKED_LEVEL, message, args, **kws)
 
 
 logging.Logger.blocked = _blocked
+
+
+class ColoredConsoleFormatter(logging.Formatter):
+    """
+    Console formatter that highlights log level tags using ANSI colors.
+    Specifically renders the [BLOCKED] flag in bright red.
+    """
+    RED = "\033[1;31m"      # Bright / Bold Red
+    YELLOW = "\033[93m"     # Yellow
+    CYAN = "\033[96m"       # Cyan
+    RESET = "\033[0m"       # Reset
+
+    def format(self, record: logging.LogRecord) -> str:
+        formatted = super().format(record)
+        if record.levelno == BLOCKED_LEVEL or record.levelname == "BLOCKED":
+            formatted = formatted.replace("[BLOCKED]", f"{self.RED}[BLOCKED]{self.RESET}")
+        elif record.levelname == "ERROR":
+            formatted = formatted.replace("[ERROR]", f"{self.RED}[ERROR]{self.RESET}")
+        elif record.levelname == "WARNING":
+            formatted = formatted.replace("[WARNING]", f"{self.YELLOW}[WARNING]{self.RESET}")
+        return formatted
 
 
 def setup_logger(name: str = "ChatServer", level: int = logging.INFO) -> logging.Logger:
@@ -31,23 +57,23 @@ def setup_logger(name: str = "ChatServer", level: int = logging.INFO) -> logging
     if logger.hasHandlers():
         return logger
 
-    # Log message format
-    formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] [%(filename)s] [%(name)s]: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    # Format template
+    log_format = "[%(asctime)s] [%(levelname)s] [%(filename)s] [%(name)s]: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
 
-    # Console Handler (stdout)
+    # Console Handler with color formatting (renders [BLOCKED] in red)
+    console_formatter = ColoredConsoleFormatter(fmt=log_format, datefmt=date_format)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File Handler (server.log)
+    # File Handler for server.log (plain text without ANSI escape codes)
+    file_formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
     try:
         file_handler = logging.FileHandler(LOG_FILE_PATH, encoding="utf-8")
         file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
     except Exception as e:
         print(f"Warning: Could not configure file logging: {e}", file=sys.stderr)
@@ -57,3 +83,4 @@ def setup_logger(name: str = "ChatServer", level: int = logging.INFO) -> logging
 
 # Default logger instance ready to import across modules
 logger = setup_logger()
+
