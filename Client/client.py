@@ -109,7 +109,7 @@ def authenticate(server_url: str) -> str:
 
 
 def _retry(prompt: str) -> bool:
-    answer = input(f"{prompt} [y/N]: ").strip().lower()
+    answer = input(f"{prompt} [Y/N]: ").strip().lower()
     return answer in ("y", "yes")
 
 
