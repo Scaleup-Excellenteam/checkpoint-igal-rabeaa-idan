@@ -30,7 +30,7 @@ except ImportError:
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-DEFAULT_SERVER = "http://127.0.0.1:8000"
+DEFAULT_SERVER = "http://172.28.12.20:8000"
 WS_PATH = "/messanger"
 
 
@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument(
         "--server",
         default=None,
-        help=f"Server base URL, e.g. http://127.0.0.1:8000 (default prompts, "
+        help=f"Server base URL, e.g. http://172.28.12.20:8000 (default prompts, "
              f"falls back to {DEFAULT_SERVER})",
     )
     return parser.parse_args()

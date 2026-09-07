@@ -132,7 +132,7 @@ async def send_error(ws: Any, message: str) -> None:
 
 
 @app.websocket("/messanger")
-async def websocket_messanger(websocket: Any):
+async def websocket_messanger(websocket: WebSocket):
     """
     WebSocket endpoint for room-based chat communication.
     Works seamlessly with both FastAPI and standalone websockets serve.
