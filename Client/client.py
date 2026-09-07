@@ -12,17 +12,25 @@ Flow:
        the current room.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
 import sys
-from urllib.parse import quote, urlencode, urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
-import requests
+try:
+    import httpx
+    USE_HTTPX = True
+except ImportError:
+    import requests
+    USE_HTTPX = False
+
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-DEFAULT_SERVER = "http://172.28.12.20:8000"
+DEFAULT_SERVER = "http://127.0.0.1:8000"
 WS_PATH = "/messanger"
 
 
@@ -31,7 +39,7 @@ def parse_args():
     parser.add_argument(
         "--server",
         default=None,
-        help=f"Server base URL, e.g. http://localhost:8000 (default prompts, "
+        help=f"Server base URL, e.g. http://127.0.0.1:8000 (default prompts, "
              f"falls back to {DEFAULT_SERVER})",
     )
     return parser.parse_args()
@@ -51,10 +59,29 @@ def to_ws_url(http_url: str, username: str) -> str:
     return urlunparse((ws_scheme, parsed.netloc, WS_PATH, "", query, ""))
 
 
+def _http_post(url: str, json_data: dict) -> tuple[int, dict]:
+    """Helper to perform HTTP POST using httpx or requests."""
+    if USE_HTTPX:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(url, json=json_data)
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"message": resp.text}
+            return resp.status_code, body
+    else:
+        resp = requests.post(url, json=json_data, timeout=10.0)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"message": resp.text}
+        return resp.status_code, body
+
+
 def authenticate(server_url: str) -> str:
     """Interactively login or signup. Returns the authenticated username."""
     while True:
-        choice = input("[1] Login  [2] Signup: ").strip()
+        choice = input("\n[1] Login  [2] Signup: ").strip()
         if choice not in ("1", "2"):
             print("Please enter 1 or 2.")
             continue
@@ -64,33 +91,21 @@ def authenticate(server_url: str) -> str:
         password = input("Password: ").strip()
 
         try:
-            response = requests.post(
-                f"{server_url}{endpoint}",
-                json={"username": username, "password": password},
-                timeout=10,
-            )
-        except requests.exceptions.RequestException as exc:
+            status_code, body = _http_post(f"{server_url}{endpoint}", {"username": username, "password": password})
+        except Exception as exc:
             print(f"Could not reach server: {exc}")
             if not _retry("Try again?"):
                 sys.exit(1)
             continue
 
-        if response.status_code == 200:
-            print(f"{'Login' if choice == '1' else 'Signup'} successful.")
+        if status_code in (200, 201):
+            print(f"\n[SUCCESS] {'Login' if choice == '1' else 'Signup'} successful.")
             return username
 
-        detail = _extract_error(response)
-        print(f"Authentication failed ({response.status_code}): {detail}")
+        detail = body.get("detail") or body.get("message") or str(body)
+        print(f"\n[FAILED] Authentication failed ({status_code}): {detail}")
         if not _retry("Try again?"):
             sys.exit(1)
-
-
-def _extract_error(response: requests.Response) -> str:
-    try:
-        body = response.json()
-        return body.get("detail") or body.get("message") or str(body)
-    except ValueError:
-        return response.text or "unknown error"
 
 
 def _retry(prompt: str) -> bool:
@@ -108,16 +123,19 @@ def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
         return {"action": "join", "room": room_id}
 
     if text == "/leave":
-        return {"action": "leave"}
+        if not current_room:
+            print("You are not currently in any room.")
+            return None
+        return {"action": "leave", "room": current_room}
 
     if text == "/exit":
         return {"action": "exit"}
 
     if not current_room:
-        print("You're not in a room yet. Use /join <room_id> first.")
+        print("You're not in a room yet. Use /join <room_id> first (e.g. /join general).")
         return None
 
-    return {"action": "message", "room": current_room, "content": text}
+    return {"action": "message", "room": current_room, "content": text, "payload": text}
 
 
 async def receive_messages(ws, state: dict) -> None:
@@ -136,16 +154,16 @@ async def receive_messages(ws, state: dict) -> None:
 
 
 def _render_incoming(payload: dict) -> None:
-    action = payload.get("action")
+    action = payload.get("action") or payload.get("type")
     if action == "message":
         print(f"\n[{payload.get('room', '?')}] {payload.get('from', 'unknown')}: "
-              f"{payload.get('content', '')}")
-    elif action == "joined":
+              f"{payload.get('content', '') or payload.get('payload', '')}")
+    elif action in ("joined", "subscribed"):
         print(f"\n----- Joined room '{payload.get('room')}' -----")
-    elif action == "left":
-        print(f"\n----- Left room -----")
+    elif action in ("left", "unsubscribed"):
+        print(f"\n----- Left room '{payload.get('room', '')}' -----")
     elif action == "error":
-        print(f"\n----- Server error: {payload.get('message')} -----")
+        print(f"\n----- Server error: {payload.get('message') or payload.get('error')} -----")
     else:
         print(f"\n{payload}")
 
@@ -161,6 +179,10 @@ async def send_messages(ws, state: dict) -> None:
         if payload is None:
             continue
 
+        if payload["action"] == "exit":
+            await ws.close()
+            return
+
         try:
             await ws.send(json.dumps(payload))
         except ConnectionClosed:
@@ -171,9 +193,6 @@ async def send_messages(ws, state: dict) -> None:
             current_room = payload["room"]
         elif payload["action"] == "leave":
             current_room = None
-        elif payload["action"] == "exit":
-            await ws.close()
-            return
 
 
 async def run_chat(ws_url: str) -> None:
