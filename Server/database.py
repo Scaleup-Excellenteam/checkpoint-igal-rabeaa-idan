@@ -2,7 +2,10 @@ import os
 import sqlite3
 import dbm
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
+
+# Ban policy: number of DLP strikes before an account is permanently blocked.
+RISK_SCORE_BAN_THRESHOLD = 3
 
 # Resolve database file paths relative to the Server directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,10 +33,26 @@ def init_relational_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                risk_score INTEGER DEFAULT 0,
+                is_blocked INTEGER DEFAULT 0
             );
         """)
         conn.commit()
+
+        # Migration path for pre-existing users.db files created before the
+        # DLP/risk-scoring columns existed. ALTER TABLE ADD COLUMN fails with
+        # OperationalError if the column is already present, which we treat
+        # as a no-op so init stays idempotent across restarts.
+        for ddl in (
+            "ALTER TABLE users ADD COLUMN risk_score INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0;",
+        ):
+            try:
+                cursor.execute(ddl)
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
 
 def db_insert_user(username: str, password_hash: str) -> bool:
@@ -68,6 +87,70 @@ def get_user_hash(username: str) -> Optional[str]:
         )
         row = cursor.fetchone()
         return row["password_hash"] if row else None
+
+
+# ==========================================
+# DLP RISK SCORING & BAN ENFORCEMENT
+# ==========================================
+
+def get_user_risk_info(username: str) -> Tuple[int, bool]:
+    """Returns (risk_score, is_blocked) for the given user.
+
+    Unknown users are treated as having a clean record rather than
+    raising, since callers use this for permissive lookups (e.g. the
+    WebSocket handshake) that shouldn't crash on a typo'd username.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT risk_score, is_blocked FROM users WHERE username = ?;",
+            (username.strip(),)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return 0, False
+        return row["risk_score"], bool(row["is_blocked"])
+
+
+def increment_risk_score(username: str, points: int = 1) -> Tuple[int, bool]:
+    """Increments risk_score by points in DB.
+
+    If the new risk_score >= RISK_SCORE_BAN_THRESHOLD, sets is_blocked = 1.
+    Returns (new_risk_score, is_blocked).
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET risk_score = risk_score + ? WHERE username = ?;",
+            (points, username.strip())
+        )
+        cursor.execute(
+            "SELECT risk_score, is_blocked FROM users WHERE username = ?;",
+            (username.strip(),)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            conn.commit()
+            return 0, False
+
+        new_score = row["risk_score"]
+        is_blocked = bool(row["is_blocked"])
+
+        if new_score >= RISK_SCORE_BAN_THRESHOLD and not is_blocked:
+            cursor.execute(
+                "UPDATE users SET is_blocked = 1 WHERE username = ?;",
+                (username.strip(),)
+            )
+            is_blocked = True
+
+        conn.commit()
+        return new_score, is_blocked
+
+
+def is_user_blocked(username: str) -> bool:
+    """Returns True if user exists and is_blocked == 1, else False."""
+    _, blocked = get_user_risk_info(username)
+    return blocked
 
 
 # ==========================================

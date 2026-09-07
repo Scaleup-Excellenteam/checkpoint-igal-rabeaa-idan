@@ -163,7 +163,14 @@ def _render_incoming(payload: dict) -> None:
     elif action in ("left", "unsubscribed"):
         print(f"\n----- Left room '{payload.get('room', '')}' -----")
     elif action == "error":
-        print(f"\n----- Server error: {payload.get('message') or payload.get('error')} -----")
+        code = payload.get("code")
+        message = payload.get("message") or payload.get("error")
+        if code == "ACCOUNT_BANNED":
+            print(f"\n===== BANNED: {message} =====")
+        elif code == "DLP_VIOLATION":
+            print(f"\n!!!!! WARNING: {message} !!!!!")
+        else:
+            print(f"\n----- Server error: {message} -----")
     else:
         print(f"\n{payload}")
 
