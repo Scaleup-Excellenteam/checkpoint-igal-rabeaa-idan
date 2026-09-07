@@ -2,6 +2,7 @@ import os
 import sqlite3
 import dbm
 import json
+from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 
 # Resolve database file paths relative to the Server directory
@@ -14,11 +15,16 @@ KV_STORE_PATH = os.path.join(BASE_DIR, "messages_kv")
 # RELATIONAL STORE: Users & Authentication
 # ==========================================
 
-def get_db_connection() -> sqlite3.Connection:
-    """Returns a SQLite database connection with row factory enabled."""
+@contextmanager
+def get_db_connection():
+    """Context manager that yields a SQLite database connection and guarantees it is closed."""
     conn = sqlite3.connect(RELATIONAL_DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
+
 
 
 def init_relational_db() -> None:

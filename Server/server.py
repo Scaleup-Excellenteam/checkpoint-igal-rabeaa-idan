@@ -14,6 +14,7 @@ import json
 import os
 import time
 import uuid
+import urllib.parse
 from typing import Optional, Any, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
@@ -148,9 +149,12 @@ async def websocket_messanger(websocket: WebSocket):
         username = websocket.query_params.get("username", "anonymous")
     elif hasattr(websocket, "request") and hasattr(websocket.request, "path"):
         # Check path validity if called via websockets ServerConnection
-        if not websocket.request.path.startswith("/messanger"):
+        parsed = urllib.parse.urlparse(websocket.request.path)
+        if not parsed.path.startswith("/messanger"):
             await websocket.close(code=1008, reason="unsupported WebSocket path")
             return
+        qs = urllib.parse.parse_qs(parsed.query)
+        username = qs.get("username", ["anonymous"])[0]
 
     # Server-side access enforcement: verify that named users exist in the database
     if username != "anonymous" and get_user_hash(username) is None:
