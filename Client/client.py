@@ -1,30 +1,205 @@
+"""
+TSPO chat client.
+
+Flow:
+    1. Ask the user for the server address (or take it from --server).
+    2. Authenticate against the REST API (/login or /signup).
+    3. Open a WebSocket to /messanger, passing the authenticated
+       username as a query parameter so the server can identify the
+       session.
+    4. Run send/receive loops concurrently. Supports /join, /leave,
+       /exit commands; everything else is sent as a chat message in
+       the current room.
+"""
+
+import argparse
 import asyncio
+import json
+import sys
+from urllib.parse import quote, urlencode, urlparse, urlunparse
+
+import requests
 import websockets
+from websockets.exceptions import ConnectionClosed
 
-SERVER_URL = "ws://172.28.12.20:8000/messanger"
+DEFAULT_SERVER = "http://172.28.12.20:8000"
+WS_PATH = "/messanger"
 
-async def receive_messages(ws):
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="TSPO chat client")
+    parser.add_argument(
+        "--server",
+        default=None,
+        help=f"Server base URL, e.g. http://localhost:8000 (default prompts, "
+             f"falls back to {DEFAULT_SERVER})",
+    )
+    return parser.parse_args()
+
+
+def resolve_server_url(cli_value: str | None) -> str:
+    if cli_value:
+        return cli_value.rstrip("/")
+    entered = input(f"Server address [{DEFAULT_SERVER}]: ").strip()
+    return (entered or DEFAULT_SERVER).rstrip("/")
+
+
+def to_ws_url(http_url: str, username: str) -> str:
+    parsed = urlparse(http_url)
+    ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+    query = urlencode({"username": username})
+    return urlunparse((ws_scheme, parsed.netloc, WS_PATH, "", query, ""))
+
+
+def authenticate(server_url: str) -> str:
+    """Interactively login or signup. Returns the authenticated username."""
     while True:
-        message = await ws.recv()
-        print(f"\n----- {message} -----")
+        choice = input("[1] Login  [2] Signup: ").strip()
+        if choice not in ("1", "2"):
+            print("Please enter 1 or 2.")
+            continue
 
-async def send_messages(ws):
+        endpoint = "/login" if choice == "1" else "/signup"
+        username = input("Username: ").strip()
+        password = input("Password: ").strip()
+
+        try:
+            response = requests.post(
+                f"{server_url}{endpoint}",
+                json={"username": username, "password": password},
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as exc:
+            print(f"Could not reach server: {exc}")
+            if not _retry("Try again?"):
+                sys.exit(1)
+            continue
+
+        if response.status_code == 200:
+            print(f"{'Login' if choice == '1' else 'Signup'} successful.")
+            return username
+
+        detail = _extract_error(response)
+        print(f"Authentication failed ({response.status_code}): {detail}")
+        if not _retry("Try again?"):
+            sys.exit(1)
+
+
+def _extract_error(response: requests.Response) -> str:
+    try:
+        body = response.json()
+        return body.get("detail") or body.get("message") or str(body)
+    except ValueError:
+        return response.text or "unknown error"
+
+
+def _retry(prompt: str) -> bool:
+    answer = input(f"{prompt} [y/N]: ").strip().lower()
+    return answer in ("y", "yes")
+
+
+def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
+    """Translate raw CLI input into a structured protocol message."""
+    if text.startswith("/join "):
+        room_id = text[len("/join "):].strip()
+        if not room_id:
+            print("Usage: /join <room_id>")
+            return None
+        return {"action": "join", "room": room_id}
+
+    if text == "/leave":
+        return {"action": "leave"}
+
+    if text == "/exit":
+        return {"action": "exit"}
+
+    if not current_room:
+        print("You're not in a room yet. Use /join <room_id> first.")
+        return None
+
+    return {"action": "message", "room": current_room, "content": text}
+
+
+async def receive_messages(ws, state: dict) -> None:
+    try:
+        async for raw in ws:
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError):
+                print(f"\n----- {raw} -----\n# ", end="", flush=True)
+                continue
+
+            _render_incoming(payload)
+            print("# ", end="", flush=True)
+    except ConnectionClosed:
+        state["disconnected"] = True
+
+
+def _render_incoming(payload: dict) -> None:
+    action = payload.get("action")
+    if action == "message":
+        print(f"\n[{payload.get('room', '?')}] {payload.get('from', 'unknown')}: "
+              f"{payload.get('content', '')}")
+    elif action == "joined":
+        print(f"\n----- Joined room '{payload.get('room')}' -----")
+    elif action == "left":
+        print(f"\n----- Left room -----")
+    elif action == "error":
+        print(f"\n----- Server error: {payload.get('message')} -----")
+    else:
+        print(f"\n{payload}")
+
+
+async def send_messages(ws, state: dict) -> None:
+    current_room = None
     while True:
         text = await asyncio.to_thread(input, "# ")
+        if not text:
+            continue
 
-        if text == "/exit":
+        payload = build_outgoing_payload(current_room, text)
+        if payload is None:
+            continue
+
+        try:
+            await ws.send(json.dumps(payload))
+        except ConnectionClosed:
+            state["disconnected"] = True
+            return
+
+        if payload["action"] == "join":
+            current_room = payload["room"]
+        elif payload["action"] == "leave":
+            current_room = None
+        elif payload["action"] == "exit":
             await ws.close()
             return
 
-        await ws.send(text)
 
-async def main():
-    async with websockets.connect(SERVER_URL) as ws:
-        print("----- Connected to server -----")
+async def run_chat(ws_url: str) -> None:
+    state = {"disconnected": False}
+    try:
+        async with websockets.connect(ws_url) as ws:
+            print("----- Connected to server -----")
+            await asyncio.gather(
+                receive_messages(ws, state),
+                send_messages(ws, state),
+            )
+    except (ConnectionClosed, OSError) as exc:
+        print(f"\n----- Connection lost: {exc} -----")
+        return
 
-        await asyncio.gather(
-            receive_messages(ws),
-            send_messages(ws)
-        )
+    if state["disconnected"]:
+        print("\n----- Disconnected from server -----")
 
-asyncio.run(main())
+
+def main():
+    args = parse_args()
+    server_url = resolve_server_url(args.server)
+    username = authenticate(server_url)
+    ws_url = to_ws_url(server_url, username)
+    asyncio.run(run_chat(ws_url))
+
+
+if __name__ == "__main__":
+    main()
