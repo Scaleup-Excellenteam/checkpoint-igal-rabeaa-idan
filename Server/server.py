@@ -152,6 +152,13 @@ async def websocket_messanger(websocket: WebSocket):
             await websocket.close(code=1008, reason="unsupported WebSocket path")
             return
 
+    # Server-side access enforcement: verify that named users exist in the database
+    if username != "anonymous" and get_user_hash(username) is None:
+        logger.warning(f"Rejected unauthenticated connection attempt for unknown user '{username}'")
+        if hasattr(websocket, "close"):
+            await websocket.close(code=1008, reason="Authentication required: user not registered")
+        return
+
     observer = WebSocketAdapter(websocket, username)
     online_users[observer] = username
     logger.info(f"WebSocket client connected: user='{username}' (Online users: {len(online_users)})")
