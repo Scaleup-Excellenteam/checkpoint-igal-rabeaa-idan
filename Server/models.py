@@ -26,10 +26,12 @@ from typing import Optional
 class Client:
     """Represents a single connected chat user."""
 
-    def __init__(self, username: str, websocket=None):
+    def __init__(self, username: str, websocket=None, risk_score: int = 0, is_blocked: bool = False):
         self.username = username
         self.websocket = websocket
         self.current_room: Optional[str] = None
+        self.risk_score = risk_score
+        self.is_blocked = is_blocked
 
     def join_room(self, room_id: str) -> None:
         """Record which room this client currently belongs to."""
@@ -46,10 +48,18 @@ class Client:
         await self.websocket.send_json(payload)
 
     def to_dict(self) -> dict:
-        return {"username": self.username, "room": self.current_room}
+        return {
+            "username": self.username,
+            "room": self.current_room,
+            "risk_score": self.risk_score,
+            "is_blocked": self.is_blocked,
+        }
 
     def __repr__(self) -> str:
-        return f"Client(username={self.username!r}, room={self.current_room!r})"
+        return (
+            f"Client(username={self.username!r}, room={self.current_room!r}, "
+            f"risk_score={self.risk_score!r}, is_blocked={self.is_blocked!r})"
+        )
 
 
 class Room:
@@ -104,8 +114,8 @@ class ModelFactory:
     """
 
     @staticmethod
-    def create_client(username: str, websocket=None) -> Client:
-        return Client(username, websocket)
+    def create_client(username: str, websocket=None, risk_score: int = 0, is_blocked: bool = False) -> Client:
+        return Client(username, websocket, risk_score=risk_score, is_blocked=is_blocked)
 
     @staticmethod
     def create_room(room_id: str) -> Room:

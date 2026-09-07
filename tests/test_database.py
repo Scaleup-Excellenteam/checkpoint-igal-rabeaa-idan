@@ -75,6 +75,37 @@ class DatabaseStorageTests(unittest.TestCase):
         self.assertEqual(len(recent_3), 3)
         self.assertEqual(recent_3[-1]["content"], "Text 9")
 
+    def test_risk_score_and_ban_lifecycle(self):
+        """Test incrementing risk score and automated banning at threshold."""
+        import uuid
+        from Server.database import get_user_risk_info, increment_risk_score, is_user_blocked, RISK_SCORE_BAN_THRESHOLD
+
+        test_user = f"risk_user_{uuid.uuid4().hex[:6]}"
+        db_insert_user(test_user, "hash123")
+
+        # Initial clean state
+        score, blocked = get_user_risk_info(test_user)
+        self.assertEqual(score, 0)
+        self.assertFalse(blocked)
+        self.assertFalse(is_user_blocked(test_user))
+
+        # Strike 1
+        s1, b1 = increment_risk_score(test_user, points=1)
+        self.assertEqual(s1, 1)
+        self.assertFalse(b1)
+
+        # Strike 2
+        s2, b2 = increment_risk_score(test_user, points=1)
+        self.assertEqual(s2, 2)
+        self.assertFalse(b2)
+
+        # Strike 3 (Threshold reached -> Banned)
+        s3, b3 = increment_risk_score(test_user, points=1)
+        self.assertEqual(s3, 3)
+        self.assertTrue(b3)
+        self.assertTrue(is_user_blocked(test_user))
+
 
 if __name__ == "__main__":
     unittest.main()
+

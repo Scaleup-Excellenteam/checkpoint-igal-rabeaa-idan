@@ -19,16 +19,18 @@ class ModelFactoryAndDomainTests(unittest.IsolatedAsyncioTestCase):
 
     def test_client_join_and_leave_room(self):
         """Client track current room upon joining and leaving."""
-        client = ModelFactory.create_client("bob")
+        client = ModelFactory.create_client("bob", risk_score=1, is_blocked=False)
+        self.assertEqual(client.risk_score, 1)
+        self.assertFalse(client.is_blocked)
         client.join_room("dev-talk")
         self.assertEqual(client.current_room, "dev-talk")
-        self.assertEqual(client.to_dict(), {"username": "bob", "room": "dev-talk"})
+        self.assertEqual(client.to_dict(), {"username": "bob", "room": "dev-talk", "risk_score": 1, "is_blocked": False})
         self.assertIn("bob", repr(client))
         self.assertIn("dev-talk", repr(client))
 
         client.leave_room()
         self.assertIsNone(client.current_room)
-        self.assertEqual(client.to_dict(), {"username": "bob", "room": None})
+        self.assertEqual(client.to_dict(), {"username": "bob", "room": None, "risk_score": 1, "is_blocked": False})
 
     async def test_client_send_with_and_without_websocket(self):
         """Client.send sends JSON payload via websocket, or raises RuntimeError if none attached."""

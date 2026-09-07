@@ -86,9 +86,11 @@ python Client/client.py
 
 ---
 
-## 🔒 Security & Anti-Bot Protection
+## 🔒 Security, DLP & Anti-Bot Protection
 
 - **Authentication Guard:** Only registered users authenticated through `/login` or `/signup` can open a WebSocket chat session.
+- **Data Loss Prevention (DLP) & Strike Engine:** Outgoing messages are inspected in real time for secrets (`secret_sauce`, `pineapple_protocol`), plaintext credentials (`password=`, `api_key=`), and credit-card PII. Violations drop the message, award a strike, and increment persistent risk score (`risk_score`).
+- **Automated Ban Policy:** Reaching 3 strikes (`RISK_SCORE_BAN_THRESHOLD = 3`) permanently bans the account (`is_blocked = 1`), disconnects active WebSockets with code `1008`, and rejects future `/login` (HTTP `403`) and WebSocket connection attempts.
 - **VirusTotal URL Reputation Filtering:** HTTP(S) URLs are extracted recursively from payloads and checked against VirusTotal. Malicious URLs are blocked immediately, sending a `security_warning` frame to the sender while logging the security verdict. Unchecked/failed lookups fail closed.
 - **Input Sanitization:** Room names are strictly sanitized against alphanumeric regex rules (`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`), payload size is capped (16 KB), frame size is capped (20 KB), and excessive JSON nesting depth is rejected.
 - **Connection Recovery & Zombie Cleanup:** Sockets that experience network timeouts or drops are safely pruned from all active rooms without crashing the server.

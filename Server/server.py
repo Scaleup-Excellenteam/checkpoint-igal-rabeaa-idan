@@ -5,6 +5,7 @@ Integrates:
 - Domain Models & Factory (Teammate 2 - Rabea)
 - Observer Pattern & Room Management (Teammate 3 - Igal)
 - VirusTotal URL Reputation Security Filtering
+- Data Loss Prevention (DLP) & Ban Policy Enforcement
 """
 
 from __future__ import annotations
@@ -25,21 +26,29 @@ from pydantic import BaseModel
 import uvicorn
 
 try:
-    from Server.database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users, get_user_hash
+    from Server.database import (
+        init_relational_db, init_kv_store, save_message, get_recent_messages,
+        get_all_users, get_user_hash, is_user_blocked, increment_risk_score,
+    )
     from Server.auth import create_user, verify_credentials
     from Server.logger import logger
     from Server.room_manager import RoomManager
     from Server.validation import MessageValidationError, parse_client_message, extract_urls
     from Server.reputation import ReputationCheckError, check_urls
+    from Server.dlp import inspect_dlp
 except ImportError:
-    from database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users, get_user_hash
+    from database import (
+        init_relational_db, init_kv_store, save_message, get_recent_messages,
+        get_all_users, get_user_hash, is_user_blocked, increment_risk_score,
+    )
     from auth import create_user, verify_credentials
     from logger import logger
     from room_manager import RoomManager
     from validation import MessageValidationError, parse_client_message, extract_urls
     from reputation import ReputationCheckError, check_urls
+    from dlp import inspect_dlp
 
-PORT = 8000
+PORT = int(os.getenv("SERVER_PORT", "8000"))
 HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 MAX_FRAME_BYTES = 20_000
 VT_API_KEY_PLACEHOLDER = "your_virustotal_api_key_here"
@@ -102,8 +111,14 @@ async def signup_endpoint(credentials: UserCredentials):
 async def login_endpoint(credentials: UserCredentials):
     """
     Login endpoint: verifies user credentials against relational DB.
-    Returns HTTP 401 on failure.
+    Returns HTTP 401 on failure, HTTP 403 if the account is banned.
     """
+    if is_user_blocked(credentials.username):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account permanently banned due to security policy violations."
+        )
+
     is_valid = verify_credentials(credentials.username, credentials.password)
     if not is_valid:
         raise HTTPException(
@@ -199,6 +214,12 @@ async def websocket_messanger(websocket: WebSocket):
             await websocket.close(code=1008, reason="Authentication required: user not registered")
         return
 
+    if username != "anonymous" and is_user_blocked(username):
+        logger.warning(f"Rejected WebSocket connection for banned user '{username}'")
+        if hasattr(websocket, "close"):
+            await websocket.close(code=1008, reason="account banned due to security policy violations")
+        return
+
     observer = WebSocketAdapter(websocket, username)
     online_users[observer] = username
     logger.info(f"WebSocket client connected: user='{username}' (Online users: {len(online_users)})")
@@ -289,7 +310,7 @@ async def websocket_messanger(websocket: WebSocket):
             elif not await rooms.is_subscribed(msg.room, observer):
                 await send_error(websocket, "subscribe to the room before publishing")
             else:
-                # VirusTotal URL reputation security check
+                # 1. VirusTotal URL reputation security check
                 try:
                     blocking_reason = await url_security_reason(msg.payload)
                 except ReputationCheckError as exc:
@@ -314,6 +335,47 @@ async def websocket_messanger(websocket: WebSocket):
                     logger.info("Security verdict - Verdict: Allowed, Reason: No malicious URL detections")
 
                 content_str = msg.payload if isinstance(msg.payload, str) else json.dumps(msg.payload)
+
+                # 2. Data Loss Prevention (DLP) check & Strike/Ban management
+                is_sensitive, rule_name, reason_code = inspect_dlp(content_str)
+                if is_sensitive:
+                    new_score, is_blocked = increment_risk_score(username, points=1)
+                    logger.warning(
+                        f"DLP violation: user='{username}' rule='{rule_name}' "
+                        f"reason='{reason_code}' risk_score={new_score} blocked={is_blocked}"
+                    )
+
+                    if is_blocked:
+                        ban_envelope = json.dumps(
+                            {
+                                "action": "error",
+                                "code": "ACCOUNT_BANNED",
+                                "message": "Permanently banned for repeated security/DLP violations.",
+                            },
+                            separators=(",", ":")
+                        )
+                        if hasattr(websocket, "send_text"):
+                            await websocket.send_text(ban_envelope)
+                        else:
+                            await websocket.send(ban_envelope)
+                        if hasattr(websocket, "close"):
+                            await websocket.close(code=1008, reason="banned for repeated DLP violations")
+                        return
+
+                    warn_envelope = json.dumps(
+                        {
+                            "action": "error",
+                            "code": "DLP_VIOLATION",
+                            "message": f"DLP violation: {rule_name}. Strike applied. Risk score: {new_score}/3.",
+                        },
+                        separators=(",", ":")
+                    )
+                    if hasattr(websocket, "send_text"):
+                        await websocket.send_text(warn_envelope)
+                    else:
+                        await websocket.send(warn_envelope)
+                    continue
+
                 timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S")
                 msg_id = str(uuid.uuid4())
 
