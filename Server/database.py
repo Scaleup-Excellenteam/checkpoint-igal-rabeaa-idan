@@ -70,6 +70,17 @@ def get_user_hash(username: str) -> Optional[str]:
         return row["password_hash"] if row else None
 
 
+def get_all_users() -> List[str]:
+    """
+    Retrieve a list of all registered usernames from the relational DB.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM users ORDER BY username ASC;")
+        rows = cursor.fetchall()
+        return [row["username"] for row in rows]
+
+
 # ==========================================
 # KEY-VALUE STORE: Chat History & Sync Queues
 # ==========================================

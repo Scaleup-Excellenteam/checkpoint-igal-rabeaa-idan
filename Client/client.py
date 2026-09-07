@@ -139,6 +139,9 @@ def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
     if text == "/list":
         return {"action": "list"}
 
+    if text == "/users":
+        return {"action": "users"}
+
     if text.startswith("/join "):
         room_id = text[len("/join "):].strip()
         if not room_id:
@@ -190,20 +193,31 @@ def _render_incoming(payload: dict) -> None:
         joined = payload.get("joined_rooms", [])
         others = payload.get("other_rooms", [])
         print("\n================== ROOMS OVERVIEW ==================")
-        print("📌 Joined Rooms (You are here):")
+        print("Joined Rooms (You are here):")
         if joined:
             for r in joined:
-                print(f"   ✓ {r}")
+                print(f"   - {r}")
         else:
-            print("   (None - use /join <room_id> to enter a room)")
+            print(" (None - use /join <room_id> to enter a room)")
 
-        print("\n🌐 Other Active Rooms on Server:")
+        print("\nOther Active Rooms on Server:")
         if others:
             for r in others:
-                print(f"   • {r}")
+                print(f"   - {r}")
         else:
-            print("   (No other active rooms)")
+            print(" (No other active rooms)")
         print("====================================================")
+    elif action in ("users", "user_list"):
+        user_entries = payload.get("users", [])
+        print("\n=================== USERS LIST ===================")
+        if user_entries:
+            for u in user_entries:
+                name = u.get("username", "unknown")
+                status_val = u.get("status", "OFFLINE")
+                print(f"   {name} - {status_val}")
+        else:
+            print("   (No registered users found)")
+        print("==================================================")
     elif action == "error":
         print(f"\n----- Server error: {payload.get('message') or payload.get('error')} -----")
     else:

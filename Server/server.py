@@ -14,20 +14,20 @@ import json
 import os
 import time
 import uuid
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 from pydantic import BaseModel
 import uvicorn
 
 try:
-    from Server.database import init_relational_db, init_kv_store, save_message, get_recent_messages
+    from Server.database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users
     from Server.auth import create_user, verify_credentials
     from Server.logger import logger
     from Server.room_manager import RoomManager
     from Server.validation import MessageValidationError, parse_client_message
 except ImportError:
-    from database import init_relational_db, init_kv_store, save_message, get_recent_messages
+    from database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users
     from auth import create_user, verify_credentials
     from logger import logger
     from room_manager import RoomManager
@@ -38,6 +38,7 @@ HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 MAX_FRAME_BYTES = 20_000
 
 rooms = RoomManager()
+online_users: Dict[WebSocketAdapter, str] = {}
 
 
 # ==============================================================================
@@ -152,7 +153,8 @@ async def websocket_messanger(websocket: WebSocket):
             return
 
     observer = WebSocketAdapter(websocket, username)
-    logger.info(f"WebSocket client connected: user='{username}'")
+    online_users[observer] = username
+    logger.info(f"WebSocket client connected: user='{username}' (Online users: {len(online_users)})")
 
     try:
         # Loop over incoming messages
@@ -212,6 +214,31 @@ async def websocket_messanger(websocket: WebSocket):
                 else:
                     await websocket.send(resp)
 
+            elif msg.action == "users":
+                all_registered = get_all_users()
+                online_set = set(online_users.values())
+                user_entries = [
+                    {"username": u, "status": "ONLINE" if u in online_set else "OFFLINE"}
+                    for u in all_registered
+                ]
+                # Include online sessions if not in DB list
+                for u in online_set:
+                    if u not in all_registered and u != "anonymous":
+                        user_entries.append({"username": u, "status": "ONLINE"})
+
+                resp = json.dumps(
+                    {
+                        "action": "users",
+                        "type": "user_list",
+                        "users": user_entries,
+                    },
+                    separators=(",", ":")
+                )
+                if hasattr(websocket, "send_text"):
+                    await websocket.send_text(resp)
+                else:
+                    await websocket.send(resp)
+
             elif not await rooms.is_subscribed(msg.room, observer):
                 await send_error(websocket, "subscribe to the room before publishing")
             else:
@@ -249,6 +276,7 @@ async def websocket_messanger(websocket: WebSocket):
         logger.info(f"WebSocket client disconnected: user='{username}'")
     finally:
         # ZOMBIE CLEANUP
+        online_users.pop(observer, None)
         await rooms.remove_observer(observer)
 
 
