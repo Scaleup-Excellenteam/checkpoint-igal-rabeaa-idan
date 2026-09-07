@@ -41,7 +41,7 @@ async def health_check():
     return {"Status": "Healthy"}
 
 
-@app.post("/signup", status_code=status.HTTP_201_CREATED)
+@app.post("/signup", status_code=status.HTTP_200_OK)
 async def signup_endpoint(credentials: UserCredentials):
     """
     Signup endpoint: creates a new user account with salted password hash.
