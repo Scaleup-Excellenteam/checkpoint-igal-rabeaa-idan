@@ -21,13 +21,13 @@ from pydantic import BaseModel
 import uvicorn
 
 try:
-    from Server.database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users
+    from Server.database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users, get_user_hash
     from Server.auth import create_user, verify_credentials
     from Server.logger import logger
     from Server.room_manager import RoomManager
     from Server.validation import MessageValidationError, parse_client_message
 except ImportError:
-    from database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users
+    from database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users, get_user_hash
     from auth import create_user, verify_credentials
     from logger import logger
     from room_manager import RoomManager
