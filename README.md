@@ -1,6 +1,6 @@
 # TSPO Room-Based Chat System
 
-A high-performance, asynchronous room-based chat application built with **FastAPI**, **WebSockets**, **SQLite**, and **Key-Value Storage**.
+A high-performance, asynchronous room-based chat application built with **FastAPI**, **WebSockets**, **SQLite**, **Key-Value Storage**, and **VirusTotal Anti-Malware URL Filtering**.
 
 ---
 
@@ -14,7 +14,7 @@ The application follows the **ByteByteGo Dual-Storage Architecture**:
 2. **Key-Value Store (`messages_kv`):** 
    - Provides ultra-low latency, append-optimized storage for chat message history partitioned by room (`channel_id:message_id`).
 3. **Centralized Logging (`logger.py`):**
-   - Outputs timestamped events and security logs to both stdout and persistent `server.log`.
+   - Outputs timestamped events and security verdicts to both stdout and persistent `server.log`.
 
 ---
 
@@ -51,14 +51,21 @@ source .venv/bin/activate   # On Linux/macOS
 pip install -r requirements.txt
 ```
 
-### **2. Run the Server**
+### **2. Environment Configuration (Optional)**
+Create a `.env` file in the project root to configure optional VirusTotal URL reputation filtering:
+```ini
+VT_API_KEY=your_virustotal_api_key_here
+```
+*Note: The `.env` file is ignored by Git and must never be committed.*
+
+### **3. Run the Server**
 ```bash
 python -m Server.server
 ```
-*The server starts on `http://0.0.0.0:8000` with both the REST API and WebSocket gateway.*
+*The server starts on `http://0.0.0.0:8000` exposing both REST API endpoints and the WebSocket gateway (`/messanger`).*
 
-### **3. Run the Client CLI**
-Open a new terminal window:
+### **4. Run the Client CLI**
+Open a separate terminal window:
 ```bash
 python Client/client.py
 ```
@@ -79,17 +86,18 @@ python Client/client.py
 
 ---
 
-## 🔒 Security & Validation
+## 🔒 Security & Anti-Bot Protection
 
 - **Authentication Guard:** Only registered users authenticated through `/login` or `/signup` can open a WebSocket chat session.
-- **Input Validation:** Room names are strictly sanitized against alphanumeric regex rules (`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`), payload size is capped (16 KB), and dangerous JSON nesting depth is rejected.
-- **Connection Recovery:** Sockets that experience network timeouts or drops are safely pruned from all active rooms without crashing the server. Reconnection creates a fresh observer.
+- **VirusTotal URL Reputation Filtering:** HTTP(S) URLs are extracted recursively from payloads and checked against VirusTotal. Malicious URLs are blocked immediately, sending a `security_warning` frame to the sender while logging the security verdict. Unchecked/failed lookups fail closed.
+- **Input Sanitization:** Room names are strictly sanitized against alphanumeric regex rules (`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`), payload size is capped (16 KB), frame size is capped (20 KB), and excessive JSON nesting depth is rejected.
+- **Connection Recovery & Zombie Cleanup:** Sockets that experience network timeouts or drops are safely pruned from all active rooms without crashing the server.
 
 ---
 
 ## 🧪 Running Automated Tests
 
-Run the full suite of unit and integration tests:
+Run the full suite of unit, integration, security, and reputation tests:
 ```bash
 python -m unittest discover tests -v
 ```

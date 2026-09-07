@@ -4,6 +4,7 @@ Integrates:
 - Relational SQLite Storage & Auth (Teammate 1 - Idan)
 - Domain Models & Factory (Teammate 2 - Rabea)
 - Observer Pattern & Room Management (Teammate 3 - Igal)
+- VirusTotal URL Reputation Security Filtering
 """
 
 from __future__ import annotations
@@ -15,8 +16,10 @@ import os
 import time
 import uuid
 import urllib.parse
+from pathlib import Path
 from typing import Optional, Any, Dict
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 from pydantic import BaseModel
 import uvicorn
@@ -26,17 +29,23 @@ try:
     from Server.auth import create_user, verify_credentials
     from Server.logger import logger
     from Server.room_manager import RoomManager
-    from Server.validation import MessageValidationError, parse_client_message
+    from Server.validation import MessageValidationError, parse_client_message, extract_urls
+    from Server.reputation import ReputationCheckError, check_urls
 except ImportError:
     from database import init_relational_db, init_kv_store, save_message, get_recent_messages, get_all_users, get_user_hash
     from auth import create_user, verify_credentials
     from logger import logger
     from room_manager import RoomManager
-    from validation import MessageValidationError, parse_client_message
+    from validation import MessageValidationError, parse_client_message, extract_urls
+    from reputation import ReputationCheckError, check_urls
 
 PORT = 8000
 HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 MAX_FRAME_BYTES = 20_000
+VT_API_KEY_PLACEHOLDER = "your_virustotal_api_key_here"
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+VT_API_KEY = os.getenv("VT_API_KEY", "").strip()
 
 rooms = RoomManager()
 online_users: Dict[WebSocketAdapter, str] = {}
@@ -131,6 +140,33 @@ async def send_error(ws: Any, message: str) -> None:
         await ws.send_text(envelope)
     else:
         await ws.send(envelope)
+
+
+async def send_security_warning(ws: Any, message: str) -> None:
+    """Tell only the sender that anti-bot / URL security filtering rejected the message."""
+    envelope = json.dumps(
+        {"action": "security_warning", "type": "security_warning", "error": message, "message": message},
+        separators=(",", ":")
+    )
+    if hasattr(ws, "send_text"):
+        await ws.send_text(envelope)
+    else:
+        await ws.send(envelope)
+
+
+async def url_security_reason(payload: object) -> Optional[str]:
+    """Return a blocking reason when a payload URL is malicious or unchecked."""
+    urls = extract_urls(payload)
+    if not urls:
+        return None
+    if not VT_API_KEY or VT_API_KEY == VT_API_KEY_PLACEHOLDER:
+        raise ReputationCheckError("VT_API_KEY is not configured")
+
+    verdicts = await check_urls(urls, VT_API_KEY)
+    for verdict in verdicts:
+        if verdict.malicious_vendors > 0:
+            return f"URL flagged by {verdict.malicious_vendors} vendors"
+    return None
 
 
 @app.websocket("/messanger")
@@ -253,6 +289,30 @@ async def websocket_messanger(websocket: WebSocket):
             elif not await rooms.is_subscribed(msg.room, observer):
                 await send_error(websocket, "subscribe to the room before publishing")
             else:
+                # VirusTotal URL reputation security check
+                try:
+                    blocking_reason = await url_security_reason(msg.payload)
+                except ReputationCheckError as exc:
+                    # Fail closed: unchecked links must not bypass the security filter
+                    logger.warning(
+                        f"Security verdict - Verdict: Blocked, Reason: Reputation check unavailable ({exc})"
+                    )
+                    await send_security_warning(
+                        websocket,
+                        "Message blocked because URL reputation could not be verified",
+                    )
+                    continue
+
+                if blocking_reason is not None:
+                    logger.warning(f"Security verdict - Verdict: Blocked, Reason: {blocking_reason}")
+                    await send_security_warning(
+                        websocket, f"Message blocked: {blocking_reason}"
+                    )
+                    continue
+
+                if extract_urls(msg.payload):
+                    logger.info("Security verdict - Verdict: Allowed, Reason: No malicious URL detections")
+
                 content_str = msg.payload if isinstance(msg.payload, str) else json.dumps(msg.payload)
                 timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S")
                 msg_id = str(uuid.uuid4())
