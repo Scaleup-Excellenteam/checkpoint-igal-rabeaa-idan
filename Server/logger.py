@@ -10,9 +10,9 @@ LOG_FILE_PATH = os.path.join(LOG_DIR, "server.log")
 if sys.platform == "win32":
     os.system("")
 
-# Custom BLOCKED log level (named 'ERROR: BLOCKED' so log highlighters render it in RED)
+# Custom BLOCKED log level
 BLOCKED_LEVEL = 35
-logging.addLevelName(BLOCKED_LEVEL, "ERROR: BLOCKED")
+logging.addLevelName(BLOCKED_LEVEL, "BLOCKED")
 
 
 def _blocked(self, message, *args, **kws):
@@ -28,7 +28,7 @@ logging.Logger.blocked = _blocked
 class ColoredConsoleFormatter(logging.Formatter):
     """
     Console formatter that highlights log level tags using ANSI colors.
-    Specifically renders the [ERROR: BLOCKED] flag in bright red.
+    Specifically renders the [BLOCKED] flag in bright red.
     """
     RED = "\033[1;31m"      # Bright / Bold Red
     YELLOW = "\033[93m"     # Yellow
@@ -37,15 +37,14 @@ class ColoredConsoleFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         formatted = super().format(record)
-        if record.levelno == BLOCKED_LEVEL or "BLOCKED" in record.levelname:
-            formatted = formatted.replace(f"[{record.levelname}]", f"{self.RED}[{record.levelname}]{self.RESET}")
-            # Also catch standalone [BLOCKED] if present
+        if record.levelno == BLOCKED_LEVEL or record.levelname == "BLOCKED":
             formatted = formatted.replace("[BLOCKED]", f"{self.RED}[BLOCKED]{self.RESET}")
         elif record.levelname == "ERROR":
             formatted = formatted.replace("[ERROR]", f"{self.RED}[ERROR]{self.RESET}")
         elif record.levelname == "WARNING":
             formatted = formatted.replace("[WARNING]", f"{self.YELLOW}[WARNING]{self.RESET}")
         return formatted
+
 
 
 
