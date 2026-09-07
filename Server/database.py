@@ -36,10 +36,10 @@ def init_relational_db() -> None:
         conn.commit()
 
 
-def create_user(username: str, password_hash: str) -> bool:
+def db_insert_user(username: str, password_hash: str) -> bool:
     """
-    Insert a new user into the relational DB.
-    Returns True if user was created successfully, False if username already exists.
+    Insert a new user with their password hash into the relational DB.
+    Returns True if successful, False if the username already exists.
     """
     try:
         with get_db_connection() as conn:
@@ -51,7 +51,7 @@ def create_user(username: str, password_hash: str) -> bool:
             conn.commit()
             return True
     except sqlite3.IntegrityError:
-        # Username already exists (UNIQUE constraint failed)
+        # Duplicate username (UNIQUE constraint failed)
         return False
 
 
@@ -93,7 +93,7 @@ def save_message(message_id: str, channel_id: str, content: str, timestamp: str)
         "timestamp": timestamp
     }
     value = json.dumps(data).encode("utf-8")
-    
+
     with dbm.open(KV_STORE_PATH, "c") as db:
         db[key] = value
 
@@ -104,13 +104,13 @@ def get_recent_messages(channel_id: str, limit: int = 50) -> List[Dict[str, Any]
     """
     messages = []
     prefix = f"{channel_id}:".encode("utf-8")
-    
+
     with dbm.open(KV_STORE_PATH, "r") as db:
         for key in db.keys():
             if key.startswith(prefix):
                 raw_data = db[key]
                 messages.append(json.loads(raw_data.decode("utf-8")))
-    
+
     # Sort messages by timestamp ascending
     messages.sort(key=lambda msg: msg.get("timestamp", ""))
     return messages[-limit:]
