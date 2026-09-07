@@ -118,6 +118,11 @@ class DLPEndToEndIntegrationTests(unittest.TestCase):
             cls.proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             cls.proc.kill()
+        db.clear_relational_db()
+
+    def tearDown(self):
+        db.clear_relational_db()
+
 
     def test_dlp_strikes_and_ban_enforcement_flow(self):
         """Full flow: normal msg -> strike 1 -> reconnect persistence -> strike 2 -> strike 3 ban -> 403 login / 1008 WS reject."""

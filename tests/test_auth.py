@@ -1,12 +1,20 @@
 import unittest
 from Server.auth import hash_password, verify_password, create_user, verify_credentials
-from Server.database import init_relational_db
+from Server.database import init_relational_db, clear_relational_db
 
 
 class AuthUnitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_relational_db()
+
+    @classmethod
+    def tearDownClass(cls):
+        clear_relational_db()
+
+    def tearDown(self):
+        clear_relational_db()
+
 
     def test_hash_password_generates_random_salt(self):
         """Verify that hashing the exact same password twice yields different hashes due to random salt."""

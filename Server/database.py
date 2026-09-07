@@ -105,6 +105,21 @@ def get_all_users() -> List[str]:
         return [row["username"] for row in rows]
 
 
+def clear_relational_db() -> None:
+    """
+    Clear all records from the users table in the relational DB.
+    Guarantees a clean database state after test runs and administrative resets.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users;")
+        conn.commit()
+
+
+delete_all_users = clear_relational_db
+
+
+
 # ==========================================
 # DLP RISK SCORING & BAN ENFORCEMENT
 # ==========================================
@@ -177,6 +192,17 @@ def init_kv_store() -> None:
     """Initialize the KV store file for chat messages."""
     with dbm.open(KV_STORE_PATH, "c") as db:
         pass
+
+
+def clear_kv_store() -> None:
+    """Clear all records from the KV store."""
+    try:
+        with dbm.open(KV_STORE_PATH, "w") as db:
+            for key in list(db.keys()):
+                del db[key]
+    except Exception:
+        pass
+
 
 
 def save_message(message_id: str, channel_id: str, content: str, timestamp: str) -> None:

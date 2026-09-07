@@ -6,7 +6,7 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 
 from Server.server import MAX_FRAME_BYTES, websocket_messanger
-from Server.database import init_relational_db, init_kv_store, db_insert_user
+from Server.database import init_relational_db, init_kv_store, db_insert_user, clear_relational_db
 from Server.auth import hash_password
 
 
@@ -15,6 +15,14 @@ class WebSocketCommandsTests(unittest.IsolatedAsyncioTestCase):
     def setUpClass(cls):
         init_relational_db()
         init_kv_store()
+
+    @classmethod
+    def tearDownClass(cls):
+        clear_relational_db()
+
+    async def asyncTearDown(self) -> None:
+        clear_relational_db()
+
 
     async def test_list_command_returns_room_overview(self) -> None:
         """Testing 'list' action returns correct joined and available rooms overview."""

@@ -7,7 +7,9 @@ from Server.database import (
     get_all_users,
     init_kv_store,
     save_message,
-    get_recent_messages
+    get_recent_messages,
+    clear_relational_db,
+    clear_kv_store,
 )
 
 
@@ -15,6 +17,15 @@ class DatabaseStorageTests(unittest.TestCase):
     def setUp(self):
         init_relational_db()
         init_kv_store()
+        clear_relational_db()
+
+    def tearDown(self):
+        clear_relational_db()
+
+    @classmethod
+    def tearDownClass(cls):
+        clear_relational_db()
+
 
     def test_database_idempotent_initialization(self):
         """Calling init_relational_db and init_kv_store multiple times does not raise errors."""

@@ -1,7 +1,7 @@
 import unittest
 from fastapi.testclient import TestClient
 from Server.server import app
-from Server.database import init_relational_db
+from Server.database import init_relational_db, clear_relational_db
 
 
 class ApiEndpointTests(unittest.TestCase):
@@ -9,6 +9,14 @@ class ApiEndpointTests(unittest.TestCase):
     def setUpClass(cls):
         init_relational_db()
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        clear_relational_db()
+
+    def tearDown(self):
+        clear_relational_db()
+
 
     def test_health_endpoint(self):
         """Test GET /health returns HTTP 200 and healthy status."""
