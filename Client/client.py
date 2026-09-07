@@ -136,6 +136,9 @@ def build_outgoing_payload(current_room: str | None, text: str) -> dict | None:
         print_help_guide()
         return None
 
+    if text == "/list":
+        return {"action": "list"}
+
     if text.startswith("/join "):
         room_id = text[len("/join "):].strip()
         if not room_id:
@@ -183,6 +186,24 @@ def _render_incoming(payload: dict) -> None:
         print(f"\n----- Joined room '{payload.get('room')}' -----")
     elif action in ("left", "unsubscribed"):
         print(f"\n----- Left room '{payload.get('room', '')}' -----")
+    elif action in ("list", "room_list"):
+        joined = payload.get("joined_rooms", [])
+        others = payload.get("other_rooms", [])
+        print("\n================== ROOMS OVERVIEW ==================")
+        print("📌 Joined Rooms (You are here):")
+        if joined:
+            for r in joined:
+                print(f"   ✓ {r}")
+        else:
+            print("   (None - use /join <room_id> to enter a room)")
+
+        print("\n🌐 Other Active Rooms on Server:")
+        if others:
+            for r in others:
+                print(f"   • {r}")
+        else:
+            print("   (No other active rooms)")
+        print("====================================================")
     elif action == "error":
         print(f"\n----- Server error: {payload.get('message') or payload.get('error')} -----")
     else:

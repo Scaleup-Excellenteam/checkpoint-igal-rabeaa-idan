@@ -6,7 +6,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 ROOM_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ACTION_ALIASES = {
@@ -16,6 +16,8 @@ ACTION_ALIASES = {
     "leave": "unsubscribe",
     "publish": "publish",
     "message": "publish",
+    "list": "list",
+    "users": "users",
 }
 ALLOWED_ACTIONS = frozenset(ACTION_ALIASES.keys())
 MAX_PAYLOAD_BYTES = 16_384
@@ -29,7 +31,7 @@ class MessageValidationError(ValueError):
 @dataclass(frozen=True)
 class ClientMessage:
     action: str
-    room: str
+    room: Optional[str]
     payload: Any
 
 
@@ -80,6 +82,16 @@ def parse_client_message(raw: str, *, max_frame_bytes: int = 20_000) -> ClientMe
     if not isinstance(data, dict):
         raise MessageValidationError("message must be a JSON object")
 
+    raw_action = data.get("action", "publish")
+    if not isinstance(raw_action, str) or raw_action not in ALLOWED_ACTIONS:
+        raise MessageValidationError("action must be subscribe/join, unsubscribe/leave, list, users, or publish")
+
+    normalized_action = ACTION_ALIASES[raw_action]
+
+    # Global discovery commands do not require a room
+    if normalized_action in {"list", "users"}:
+        return ClientMessage(action=normalized_action, room=data.get("room"), payload=None)
+
     if "room" not in data:
         raise MessageValidationError("message requires 'room' field")
 
@@ -91,12 +103,6 @@ def parse_client_message(raw: str, *, max_frame_bytes: int = 20_000) -> ClientMe
         raise MessageValidationError(
             "room must be 1-64 characters using letters, numbers, '.', '_' or '-'"
         )
-
-    raw_action = data.get("action", "publish")
-    if not isinstance(raw_action, str) or raw_action not in ALLOWED_ACTIONS:
-        raise MessageValidationError("action must be subscribe, unsubscribe, or publish")
-
-    normalized_action = ACTION_ALIASES[raw_action]
 
     if normalized_action in {"subscribe", "unsubscribe"}:
         if "payload" in data and data["payload"] is not None:

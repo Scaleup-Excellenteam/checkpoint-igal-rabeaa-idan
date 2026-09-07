@@ -195,6 +195,23 @@ async def websocket_messanger(websocket: WebSocket):
                 else:
                     await websocket.send(resp)
 
+            elif msg.action == "list":
+                overview = await rooms.get_rooms_overview(observer)
+                resp = json.dumps(
+                    {
+                        "action": "list",
+                        "type": "room_list",
+                        "joined_rooms": overview["joined_rooms"],
+                        "other_rooms": overview["other_rooms"],
+                        "all_rooms": overview["all_rooms"],
+                    },
+                    separators=(",", ":")
+                )
+                if hasattr(websocket, "send_text"):
+                    await websocket.send_text(resp)
+                else:
+                    await websocket.send(resp)
+
             elif not await rooms.is_subscribed(msg.room, observer):
                 await send_error(websocket, "subscribe to the room before publishing")
             else:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Protocol
+from typing import Protocol, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,18 @@ class RoomManager:
     async def is_subscribed(self, room: str, observer: WebSocketObserver) -> bool:
         async with self._lock:
             return observer in self._rooms.get(room, ())
+
+    async def get_rooms_overview(self, observer: WebSocketObserver) -> Dict[str, List[str]]:
+        """Returns joined rooms for this observer and other active rooms on the server."""
+        async with self._lock:
+            joined = sorted(list(self._observer_rooms.get(observer, set())))
+            all_rooms = set(self._rooms.keys())
+            others = sorted(list(all_rooms - set(joined)))
+            return {
+                "joined_rooms": joined,
+                "other_rooms": others,
+                "all_rooms": sorted(list(all_rooms))
+            }
 
     async def publish(self, room: str, message: str) -> int:
         """Notify only this room's observers and return successful send count."""
