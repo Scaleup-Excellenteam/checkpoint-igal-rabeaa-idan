@@ -1,14 +1,26 @@
 import asyncio
-import websockets
+import json
+import os
 
-SERVER_URL = "ws://172.28.12.20:8000/messanger"
+import websockets
+from websockets.exceptions import ConnectionClosed
+
+SERVER_URL = os.getenv("CHAT_SERVER_URL", "ws://127.0.0.1:8000/messanger")
+
+
+async def send_json(ws, message):
+    await ws.send(json.dumps(message, ensure_ascii=False))
+
 
 async def receive_messages(ws):
-    while True:
-        message = await ws.recv()
-        print(f"\n----- {message} -----")
+    try:
+        async for message in ws:
+            print(f"\n----- {message} -----")
+    except ConnectionClosed:
+        print("\n----- Connection closed; you may reconnect safely. -----")
 
-async def send_messages(ws):
+
+async def send_messages(ws, room):
     while True:
         text = await asyncio.to_thread(input, "# ")
 
@@ -16,15 +28,24 @@ async def send_messages(ws):
             await ws.close()
             return
 
-        await ws.send(text)
+        await send_json(
+            ws, {"action": "publish", "room": room, "payload": text}
+        )
+
 
 async def main():
+    room = (await asyncio.to_thread(input, "Room: ")).strip()
     async with websockets.connect(SERVER_URL) as ws:
+        await send_json(
+            ws, {"action": "subscribe", "room": room, "payload": None}
+        )
         print("----- Connected to server -----")
 
         await asyncio.gather(
             receive_messages(ws),
-            send_messages(ws)
+            send_messages(ws, room),
         )
 
-asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())
