@@ -12,6 +12,8 @@ ROOM_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ALLOWED_ACTIONS = frozenset({"subscribe", "unsubscribe", "publish"})
 MAX_PAYLOAD_BYTES = 16_384
 MAX_NESTING_DEPTH = 8
+URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+URL_TRAILING_PUNCTUATION = ".,;:!?)]}"
 
 
 class MessageValidationError(ValueError):
@@ -23,6 +25,29 @@ class ClientMessage:
     action: str
     room: str
     payload: Any
+
+
+def extract_urls(payload: Any) -> tuple[str, ...]:
+    """Extract unique HTTP(S) URLs from all string values in a JSON payload."""
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, str):
+            for match in URL_PATTERN.finditer(value):
+                url = match.group(0).rstrip(URL_TRAILING_PUNCTUATION)
+                if url and url not in seen:
+                    seen.add(url)
+                    urls.append(url)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+
+    visit(payload)
+    return tuple(urls)
 
 
 def _validate_payload(value: Any, depth: int = 0) -> None:

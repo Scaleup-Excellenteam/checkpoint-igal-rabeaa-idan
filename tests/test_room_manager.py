@@ -3,7 +3,7 @@ import json
 import unittest
 
 from Server.room_manager import RoomManager
-from Server.validation import MessageValidationError, parse_client_message
+from Server.validation import MessageValidationError, extract_urls, parse_client_message
 
 
 class FakeObserver:
@@ -76,6 +76,17 @@ class RoomManagerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_extracts_unique_urls_from_nested_payload_values(self) -> None:
+        payload = {
+            "text": "See https://example.com/path, then http://test.invalid/a.",
+            "nested": ["duplicate: https://example.com/path"],
+        }
+
+        self.assertEqual(
+            extract_urls(payload),
+            ("https://example.com/path", "http://test.invalid/a"),
+        )
+
     def test_valid_publish_defaults_action_and_trims_room(self) -> None:
         message = parse_client_message(
             json.dumps({"room": " general ", "payload": {"text": "hello"}})

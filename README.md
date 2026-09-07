@@ -13,6 +13,10 @@ python3 -m venv .venv
 .venv/bin/python -m Server.server
 ```
 
+Copy the placeholder in `.env` and replace `VT_API_KEY` with a real VirusTotal
+API key before publishing messages containing URLs. The `.env` file is ignored
+by Git and must never be committed.
+
 The WebSocket endpoint is `ws://127.0.0.1:8000/messanger`. To run the included
 terminal client:
 
@@ -36,6 +40,12 @@ only to the requested room's subscribers. Room names are trimmed, allow only
 letters, numbers, `.`, `_`, and `-`, and are limited to 64 characters. Frames,
 payload size, nesting depth, unknown fields, null characters, and non-finite
 numbers are validated before routing.
+
+For publish actions, HTTP(S) URLs are extracted recursively from string values in
+the payload and checked asynchronously against VirusTotal before routing. A URL
+with one or more malicious detections is blocked and only the sender receives a
+`security_warning`. Reputation lookup failures also fail closed. URL-free and
+verified-safe messages continue to the room publisher normally.
 
 Failed sends and sends exceeding five seconds remove the stale observer from all
 rooms. Protocol ping/pong also detects silent peers. Handler-level cleanup runs in
