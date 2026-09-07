@@ -7,7 +7,10 @@ import logging
 from collections import defaultdict
 from typing import Protocol, Dict, List
 
-logger = logging.getLogger(__name__)
+try:
+    from Server.logger import logger
+except ImportError:
+    from logger import logger
 
 
 class WebSocketObserver(Protocol):

@@ -20,7 +20,7 @@ def setup_logger(name: str = "ChatServer", level: int = logging.INFO) -> logging
 
     # Log message format
     formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
+        fmt="[%(asctime)s] [%(levelname)s] [%(filename)s] [%(name)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 

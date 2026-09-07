@@ -224,7 +224,7 @@ def _render_incoming(payload: dict) -> None:
         if code == "ACCOUNT_BANNED":
             print(f"\n===== BANNED: {message} =====")
         elif code == "DLP_VIOLATION":
-            print(f"\n!!!!! WARNING: {message} !!!!!")
+            pass
         else:
             print(f"\n----- Server error: {message} -----")
     else:
