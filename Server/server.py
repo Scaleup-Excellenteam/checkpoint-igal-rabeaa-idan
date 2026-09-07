@@ -215,7 +215,7 @@ async def websocket_messanger(websocket: WebSocket):
         return
 
     if username != "anonymous" and is_user_blocked(username):
-        logger.warning(f"Rejected WebSocket connection for banned user '{username}'")
+        logger.blocked(f"Rejected WebSocket connection for banned user '{username}'")
         if hasattr(websocket, "close"):
             await websocket.close(code=1008, reason="account banned due to security policy violations")
         return
@@ -340,10 +340,16 @@ async def websocket_messanger(websocket: WebSocket):
                 is_sensitive, rule_name, reason_code = inspect_dlp(content_str)
                 if is_sensitive:
                     new_score, is_blocked = increment_risk_score(username, points=1)
-                    logger.warning(
-                        f"DLP violation: user='{username}' rule='{rule_name}' "
-                        f"reason='{reason_code}' risk_score={new_score} blocked={is_blocked}"
-                    )
+                    if is_blocked:
+                        logger.blocked(
+                            f"DLP violation: user='{username}' rule='{rule_name}' "
+                            f"reason='{reason_code}' risk_score={new_score} blocked={is_blocked}"
+                        )
+                    else:
+                        logger.warning(
+                            f"DLP violation: user='{username}' rule='{rule_name}' "
+                            f"reason='{reason_code}' risk_score={new_score} blocked={is_blocked}"
+                        )
 
                     if is_blocked:
                         ban_envelope = json.dumps(

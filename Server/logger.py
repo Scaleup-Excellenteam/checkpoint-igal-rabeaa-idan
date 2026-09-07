@@ -7,6 +7,19 @@ LOG_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE_PATH = os.path.join(LOG_DIR, "server.log")
 
 
+# Custom BLOCKED log level
+BLOCKED_LEVEL = 35
+logging.addLevelName(BLOCKED_LEVEL, "BLOCKED")
+
+
+def _blocked(self, message, *args, **kws):
+    if self.isEnabledFor(BLOCKED_LEVEL):
+        self._log(BLOCKED_LEVEL, message, args, **kws)
+
+
+logging.Logger.blocked = _blocked
+
+
 def setup_logger(name: str = "ChatServer", level: int = logging.INFO) -> logging.Logger:
     """
     Configures and returns a centralized logger with both console and file handlers.
